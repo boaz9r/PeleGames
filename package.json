@@ -1,0 +1,25 @@
+{
+  "name": "pelegames",
+  "version": "1.0.0",
+  "homepage": "https://boazgreen-cp.github.io/pelegames",
+  "private": true,
+  "dependencies": {
+    "mammoth": "^1.11.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-scripts": "^5.0.1"
+  },
+  "devDependencies": {
+    "gh-pages": "^6.3.0"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d build"
+  },
+  "browserslist": {
+    "production": [">0.2%", "not dead", "not op_mini all"],
+    "development": ["last 1 chrome version", "last 1 firefox version", "last 1 safari version"]
+  }
+}
