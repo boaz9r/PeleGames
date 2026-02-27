@@ -1,0 +1,12 @@
+{
+  "files": {
+    "main.js": "/pelegames/static/js/main.928efa25.js",
+    "static/js/633.e20005db.chunk.js": "/pelegames/static/js/633.e20005db.chunk.js",
+    "index.html": "/pelegames/index.html",
+    "main.928efa25.js.map": "/pelegames/static/js/main.928efa25.js.map",
+    "633.e20005db.chunk.js.map": "/pelegames/static/js/633.e20005db.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/js/main.928efa25.js"
+  ]
+}
