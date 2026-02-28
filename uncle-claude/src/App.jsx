@@ -109,9 +109,14 @@ async function callClaude(messages, sys, apiKey) {
       },
       body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 300, system: sys, messages }),
     });
+    if (!r.ok) {
+      const body = await r.text();
+      console.warn(`[callClaude] API error ${r.status}: ${body}`);
+      return null;
+    }
     const d = await r.json();
     return d.content?.[0]?.text || null;
-  } catch (e) { console.error(e); return null; }
+  } catch (e) { console.error("[callClaude] fetch failed:", e); return null; }
 }
 
 function StarBg() {
@@ -217,6 +222,7 @@ export default function App() {
   const [showExitPrompt, setShowExitPrompt] = useState(false);
   const [exitPass, setExitPass] = useState("");
   const [continueFiredAt, setContinueFiredAt] = useState(new Set());
+  const [apiError, setApiError] = useState(false);
 
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -256,7 +262,9 @@ export default function App() {
       [{ role: "user", content: `${name} ענה: "${answer}" על: "${question}"\nתגובה מצחיקה חמה 1-2 משפטים.` }],
       getSys(), apiKey
     );
-    return r || (gender === "male" ? "מעניין מאוד! 😄" : "מעניינת מאוד! 😄");
+    if (r) { setApiError(false); return r; }
+    setApiError(true);
+    return gender === "male" ? "מעניין מאוד! 😄" : "מעניינת מאוד! 😄";
   };
 
   const genFollowup = async (question, answer) => {
@@ -332,6 +340,7 @@ export default function App() {
     const qs = getQuestions(parseInt(age), gender);
     setAllQuestions(qs);
     setScreen("chat");
+    setApiError(false);
     processingRef.current = false;
 
     if (resumeFrom && !resumeFrom.askRedo) {
@@ -381,64 +390,69 @@ export default function App() {
     setInputValue("");
     setChatMessages(prev => [...prev, { text, isUser: true }]);
 
-    const q = allQuestions[currentQIdx];
+    try {
+      const q = allQuestions[currentQIdx];
 
-    if (awaitingFollowup) {
-      const newAns = { ...answers, [`${q.key}_followup`]: text };
-      setAnswers(newAns);
-      setAwaitingFollowup(false);
-      const nextMQ = mainQAnswered + 1;
-      setMainQAnswered(nextMQ);
-      await saveProgress(newAns, currentQIdx + 1, nextMQ);
-      const reaction = await genReaction("שאלת המשך", text);
-      await addBot(reaction, SHORT_DELAY);
-      await proceedToQuestion(currentQIdx + 1, nextMQ);
-      return;
-    }
-
-    if (apiKey) {
-      const isGib = await checkGibberish(text);
-      if (isGib && gibberishRetry === 0) {
-        setGibberishRetry(1);
-        await addBot(gender === "male"
-          ? `אממ... ${name}, מה? 🤔\nנראה לי שהאצבעות שלך רקדו על המקלדת!\nבוא ננסה שוב, הפעם ברצינות (קצת) 😄`
-          : `אממ... ${name}, מה? 🤔\nנראה לי שהאצבעות שלך רקדו על המקלדת!\nבואי ננסה שוב, הפעם ברצינות (קצת) 😄`, SHORT_DELAY);
-        processingRef.current = false;
-        return;
-      }
-      if (isGib && gibberishRetry >= 1) {
-        setGibberishRetry(0);
-        await addBot(`אוקיי, אני מבין שלא בא לך לענות על זה... 😅\nלא נורא, נמשיך הלאה! 🚀`, SHORT_DELAY);
-        const newAns = { ...answers, [q.key]: "(לא ענה)" };
+      if (awaitingFollowup) {
+        const newAns = { ...answers, [`${q.key}_followup`]: text };
         setAnswers(newAns);
+        setAwaitingFollowup(false);
         const nextMQ = mainQAnswered + 1;
         setMainQAnswered(nextMQ);
         await saveProgress(newAns, currentQIdx + 1, nextMQ);
+        const reaction = await genReaction("שאלת המשך", text);
+        await addBot(reaction, SHORT_DELAY);
         await proceedToQuestion(currentQIdx + 1, nextMQ);
         return;
       }
-    }
 
-    const newAns = { ...answers, [q.key]: text };
-    setAnswers(newAns);
-    const reaction = await genReaction(q.q, text);
-    await addBot(reaction, SHORT_DELAY);
-
-    if (q.followup && apiKey) {
-      const fu = await genFollowup(q.q, text);
-      if (fu) {
-        await saveProgress(newAns, currentQIdx, mainQAnswered);
-        await addBot(fu, TYPING_DELAY);
-        setAwaitingFollowup(true);
-        processingRef.current = false;
-        return;
+      if (apiKey) {
+        const isGib = await checkGibberish(text);
+        if (isGib && gibberishRetry === 0) {
+          setGibberishRetry(1);
+          await addBot(gender === "male"
+            ? `אממ... ${name}, מה? 🤔\nנראה לי שהאצבעות שלך רקדו על המקלדת!\nבוא ננסה שוב, הפעם ברצינות (קצת) 😄`
+            : `אממ... ${name}, מה? 🤔\nנראה לי שהאצבעות שלך רקדו על המקלדת!\nבואי ננסה שוב, הפעם ברצינות (קצת) 😄`, SHORT_DELAY);
+          return;
+        }
+        if (isGib && gibberishRetry >= 1) {
+          setGibberishRetry(0);
+          await addBot(`אוקיי, אני מבין שלא בא לך לענות על זה... 😅\nלא נורא, נמשיך הלאה! 🚀`, SHORT_DELAY);
+          const newAns = { ...answers, [q.key]: "(לא ענה)" };
+          setAnswers(newAns);
+          const nextMQ = mainQAnswered + 1;
+          setMainQAnswered(nextMQ);
+          await saveProgress(newAns, currentQIdx + 1, nextMQ);
+          await proceedToQuestion(currentQIdx + 1, nextMQ);
+          return;
+        }
       }
-    }
 
-    const nextMQ = mainQAnswered + 1;
-    setMainQAnswered(nextMQ);
-    await saveProgress(newAns, currentQIdx + 1, nextMQ);
-    await proceedToQuestion(currentQIdx + 1, nextMQ);
+      const newAns = { ...answers, [q.key]: text };
+      setAnswers(newAns);
+      const reaction = await genReaction(q.q, text);
+      await addBot(reaction, SHORT_DELAY);
+
+      if (q.followup && apiKey) {
+        const fu = await genFollowup(q.q, text);
+        if (fu) {
+          await saveProgress(newAns, currentQIdx, mainQAnswered);
+          await addBot(fu, TYPING_DELAY);
+          setAwaitingFollowup(true);
+          return;
+        }
+      }
+
+      const nextMQ = mainQAnswered + 1;
+      setMainQAnswered(nextMQ);
+      await saveProgress(newAns, currentQIdx + 1, nextMQ);
+      await proceedToQuestion(currentQIdx + 1, nextMQ);
+    } catch (e) {
+      console.error("handleSend error:", e);
+      try { await addBot("אוי, משהו השתבש... בוא ננסה שוב! 😅", SHORT_DELAY); } catch (_) {}
+    } finally {
+      processingRef.current = false;
+    }
   };
 
   const handleContinue = (yes) => {
@@ -711,6 +725,12 @@ export default function App() {
         </div>
         <div onClick={() => setShowExitPrompt(true)} style={{ cursor: "pointer", fontSize: 16, opacity: 0.5, padding: "6px 10px", color: "white", background: "rgba(255,255,255,0.1)", borderRadius: 8 }}>✕</div>
       </div>
+
+      {apiError && (
+        <div style={{ position: "fixed", top: 62, left: 0, right: 0, zIndex: 10, background: "rgba(245,87,108,0.15)", padding: "6px 16px", textAlign: "center", fontSize: 13, color: "rgba(255,255,255,0.7)", direction: "rtl" }}>
+          הדוד קלוד לא מצליח להתחבר - תשובות אוטומטיות
+        </div>
+      )}
 
       {showExitPrompt && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
