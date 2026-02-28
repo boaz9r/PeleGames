@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 
 const ADMIN_PASSWORD = "peleg2024";
-const STORAGE_KEYS = { players: "pg-players", details: "pg-details", knowledge: "pg-knowledge", familyKnowledge: "pg-family", photos: "pg-photos", history: "pg-history", apikey: "pg-apikey" };
+const STORAGE_KEYS = { players: "pg-players", details: "pg-details", knowledge: "pg-knowledge", familyKnowledge: "pg-family", photos: "pg-photos", history: "pg-history", apikey: "pg-apikey", claudePhoto: "pg-claude-photo" };
 
 const CATEGORIES = [
   { id: "history", name: "היסטוריה", icon: "🏛️" },
@@ -172,6 +172,12 @@ function PlayerAvatar({ player, size = 80, onClick, selected }) {
   );
 }
 
+function ClaudeAvatar({ size = 24, src }) {
+  return (
+    <img src={src || process.env.PUBLIC_URL + "/uncle-claude.jpeg"} alt="הדוד קלוד" style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", verticalAlign: "middle", display: "inline-block" }} />
+  );
+}
+
 function Confetti() {
   const c = ["#f5576c", "#f093fb", "#4facfe", "#43e97b", "#fa709a", "#fee140", "#a18cd1"];
   return <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 9999 }}>{Array.from({ length: 60 }).map((_, i) => <div key={i} style={{ position: "absolute", top: -20, left: `${(i * 41) % 100}%`, width: 8 + (i % 4) * 3, height: 8 + (i % 4) * 3, background: c[i % c.length], borderRadius: i % 2 ? "50%" : "2px", animation: `confetti ${2 + (i % 3)}s ease-out forwards`, animationDelay: `${(i % 8) * 0.25}s` }} />)}</div>;
@@ -264,10 +270,12 @@ export default function PeleGames() {
   const [dataLoaded, setDataLoaded] = useState(false);
   const [fileProcessing, setFileProcessing] = useState(null);
   const [apiKey, setApiKey] = useState("");
+  const [claudePhoto, setClaudePhoto] = useState(null);
 
   const fileInputRef = useRef(null);
   const playerPhotoRef = useRef(null);
   const playerFileRef = useRef(null);
+  const claudePhotoRef = useRef(null);
   const [editingPlayerIdx, setEditingPlayerIdx] = useState(-1);
   const [fileTargetPlayer, setFileTargetPlayer] = useState(null);
 
@@ -280,6 +288,7 @@ export default function PeleGames() {
     const ph = loadData(STORAGE_KEYS.photos, {});
     const hist = loadData(STORAGE_KEYS.history, []);
     const savedApiKey = loadData(STORAGE_KEYS.apikey, "");
+    const savedClaudePhoto = loadData(STORAGE_KEYS.claudePhoto, null);
     const playersWithPhotos = p.map(pl => ({ ...pl, photo: ph[pl.name] || pl.photo || null, score: 0 }));
     setPlayers(playersWithPhotos);
     setPlayerDetails(det);
@@ -287,6 +296,7 @@ export default function PeleGames() {
     setFamilyKnowledge(fk);
     setGameHistory(hist);
     setApiKey(savedApiKey);
+    setClaudePhoto(savedClaudePhoto);
     setDataLoaded(true);
   }, []);
 
@@ -307,6 +317,7 @@ export default function PeleGames() {
   useEffect(() => { if (dataLoaded) saveData(STORAGE_KEYS.familyKnowledge, familyKnowledge); }, [familyKnowledge, dataLoaded]);
   useEffect(() => { if (dataLoaded) saveData(STORAGE_KEYS.history, gameHistory); }, [gameHistory, dataLoaded]);
   useEffect(() => { if (dataLoaded) saveData(STORAGE_KEYS.apikey, apiKey); }, [apiKey, dataLoaded]);
+  useEffect(() => { if (dataLoaded) saveData(STORAGE_KEYS.claudePhoto, claudePhoto); }, [claudePhoto, dataLoaded]);
 
   const activePlayers = players.filter(p => selectedPlayers[p.name]);
   const schedulePlayer = gameSchedule.length > 0 && scheduleIdx < gameSchedule.length ? activePlayers[gameSchedule[scheduleIdx]?.playerLocalIdx] : null;
@@ -331,8 +342,12 @@ export default function PeleGames() {
     const dh = { easy: "קלה", medium: "בינונית", hard: "קשה" }[diff];
     const pi = getPlayerInfo(name);
     const det = playerDetails[name] || {};
+    const playerFamily = playerDetails[name]?.family;
+    const familyPrompt = (cat === "family" && (diff === "easy" || diff === "medium") && playerFamily)
+      ? `צור שאלת טריוויה על משפחת ${playerFamily} בלבד (לא על משפחות אחרות!) ברמה ${dh}. משתתף: ${name}. מידע: ${pi}\nהחזר JSON בלבד:\n{"question":"","options":["","","",""],"correct":0,"funFact":""}`
+      : null;
     const prompt = cat === "family"
-      ? `צור שאלת טריוויה על משפחת פלג (גרין, לוין, פרוים) ברמה ${dh}. משתתף: ${name}. מידע: ${pi}\nהחזר JSON בלבד:\n{"question":"","options":["","","",""],"correct":0,"funFact":""}`
+      ? (familyPrompt || `צור שאלת טריוויה על משפחת פלג (גרין, לוין, פרוים) ברמה ${dh}. משתתף: ${name}. מידע: ${pi}\nהחזר JSON בלבד:\n{"question":"","options":["","","",""],"correct":0,"funFact":""}`)
       : `צור שאלת טריוויה בקטגוריית "${cn}" ברמה ${dh}. קהל ישראלי. ${det.age ? `גיל: ${det.age}` : ""}\nהחזר JSON בלבד:\n{"question":"","options":["","","",""],"correct":0,"funFact":""}`;
     const resp = await askClaude(prompt, systemPrompt + "\nJSON תקין בלבד. בלי markdown/backticks.", apiKey);
     try { setCurrentQuestion(JSON.parse((resp || "").replace(/```json|```/g, "").trim())); }
@@ -501,6 +516,17 @@ export default function PeleGames() {
     e.target.value = "";
   };
 
+  const handleClaudePhoto = async (e) => {
+    const f = e.target.files[0]; if (!f || !f.type.startsWith("image/")) return;
+    const r = new FileReader();
+    r.onload = async (ev) => {
+      const compressed = await compressImage(ev.target.result, 300);
+      setClaudePhoto(compressed);
+    };
+    r.readAsDataURL(f);
+    e.target.value = "";
+  };
+
   const getScheduleProgress = () => gameSchedule.length ? `שאלה ${scheduleIdx + 1} מתוך ${gameSchedule.length}` : "";
   const getRoundInfo = () => {
     if (!gameMode || !gameSchedule.length) return "";
@@ -563,7 +589,7 @@ export default function PeleGames() {
         <div style={{ fontSize: 72, fontWeight: "900", background: "linear-gradient(135deg,#f5576c,#f093fb,#4facfe)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>🎮 PeleGames</div>
         <div style={{ fontSize: 26, color: "rgba(255,255,255,0.8)", fontWeight: "300" }}>משחק הטריוויה של משפחת פלג</div>
         <div style={{ fontSize: 18, color: "rgba(255,255,255,0.5)", marginTop: 4 }}>גרין 🤝 לוין 🤝 פרוים</div>
-        <div style={{ fontSize: 20, color: "rgba(255,255,255,0.6)", marginTop: 8 }}>מנחה: הדוד קלוד 🤖</div>
+        <div style={{ fontSize: 20, color: "rgba(255,255,255,0.6)", marginTop: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>מנחה: הדוד קלוד <ClaudeAvatar size={28} src={claudePhoto} /></div>
       </div>
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", justifyContent: "center" }}>
         <Btn onClick={() => setScreen("admin")} size="lg" style={{ background: "linear-gradient(135deg,#667eea,#764ba2)" }}>🔐 אדמין</Btn>
@@ -634,6 +660,20 @@ export default function PeleGames() {
               {apiKey && <span style={{ color: "#43e97b", fontSize: 20 }}>✓</span>}
             </div>
             <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, marginTop: 6 }}>המפתח נשמר בדפדפן בלבד (localStorage)</div>
+          </div>
+
+          {/* Claude Photo Section */}
+          <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 12, padding: 16, marginBottom: 20 }}>
+            <h3 style={{ color: "white", margin: "0 0 10px 0" }}>📸 תמונת הדוד קלוד</h3>
+            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              <ClaudeAvatar size={80} src={claudePhoto} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <Btn onClick={() => claudePhotoRef.current?.click()} size="sm" style={{ background: "linear-gradient(135deg,#667eea,#764ba2)" }}>📷 העלה תמונה</Btn>
+                {claudePhoto && <Btn onClick={() => setClaudePhoto(null)} size="sm" style={{ background: "#e74c3c" }}>🔄 חזור לברירת מחדל</Btn>}
+              </div>
+            </div>
+            <input ref={claudePhotoRef} type="file" accept="image/*" onChange={handleClaudePhoto} style={{ display: "none" }} />
+            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, marginTop: 6 }}>התמונה תופיע בכל מקום שהדוד קלוד מופיע באפליקציה</div>
           </div>
 
           <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
@@ -803,7 +843,7 @@ export default function PeleGames() {
 
   const renderAnnounce = () => (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", gap: 30, zIndex: 1, position: "relative", direction: "rtl", paddingTop: 50 }}>
-      {loading ? <div style={{ fontSize: 40, color: "white", animation: "pulse 1s infinite" }}>🎤 הדוד קלוד מכין הכרזה...</div> : schedulePlayer ? <>
+      {loading ? <div style={{ fontSize: 40, color: "white", animation: "pulse 1s infinite", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}><ClaudeAvatar size={40} src={claudePhoto} /> הדוד קלוד מכין הכרזה...</div> : schedulePlayer ? <>
         <div style={{ animation: "popIn 0.6s" }}><PlayerAvatar player={schedulePlayer} size={140} /></div>
         <div style={{ fontSize: 28, color: "white", textAlign: "center", maxWidth: 600, lineHeight: 1.6, animation: "slideUp 0.5s", background: "rgba(255,255,255,0.08)", padding: "20px 30px", borderRadius: 16 }}>{announcementText}</div>
         <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 16 }}>{getScheduleProgress()} | {getRoundInfo()}</div>
@@ -864,7 +904,7 @@ export default function PeleGames() {
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", gap: 24, zIndex: 1, position: "relative", direction: "rtl", padding: "60px 30px 30px" }}>
         {showConfetti && <Confetti />}
-        {loading && !currentQuestion ? <div style={{ fontSize: 30, color: "white", animation: "pulse 1s infinite" }}>🤔 הדוד קלוד מכין שאלה...</div> : currentQuestion ? <>
+        {loading && !currentQuestion ? <div style={{ fontSize: 30, color: "white", animation: "pulse 1s infinite", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}><ClaudeAvatar size={32} src={claudePhoto} /> הדוד קלוד מכין שאלה...</div> : currentQuestion ? <>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <PlayerAvatar player={p} size={50} />
             <div style={{ color: "rgba(255,255,255,0.5)" }}>{CATEGORIES.find(c => c.id === selectedCategory)?.icon} {CATEGORIES.find(c => c.id === selectedCategory)?.name}</div>
@@ -884,9 +924,9 @@ export default function PeleGames() {
             })}
           </div>
           {selectedAnswer !== null && <div style={{ animation: "slideUp 0.5s", textAlign: "center", maxWidth: 700, width: "100%" }}>
-            {loading ? <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 18, padding: 20 }}>🤖 חושב...</div> : claudeReaction && <>
+            {loading ? <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 18, padding: 20 }}><ClaudeAvatar size={18} src={claudePhoto} /> חושב...</div> : claudeReaction && <>
               <div style={{ background: "linear-gradient(135deg,rgba(245,87,108,0.15),rgba(240,147,251,0.15))", borderRadius: 16, padding: "20px 30px", border: "1px solid rgba(245,87,108,0.3)", marginBottom: 10 }}>
-                <div style={{ fontSize: 14, color: "#f5576c", marginBottom: 6 }}>🤖 הדוד קלוד:</div>
+                <div style={{ fontSize: 14, color: "#f5576c", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}><ClaudeAvatar size={20} src={claudePhoto} /> הדוד קלוד:</div>
                 <div style={{ color: "white", fontSize: 20, lineHeight: 1.6 }}>{claudeReaction}</div>
               </div>
               {currentQuestion.funFact && <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 14, marginBottom: 10 }}>💡 {currentQuestion.funFact}</div>}
