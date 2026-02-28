@@ -234,6 +234,7 @@ export default function App() {
   const [continueFiredAt, setContinueFiredAt] = useState(new Set());
   const [apiError, setApiError] = useState(false);
   const [errorLogs, setErrorLogs] = useState([]);
+  const [apiKeyStatus, setApiKeyStatus] = useState(null);
 
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -256,6 +257,16 @@ export default function App() {
       setTestMode(tm);
     })();
   }, []);
+
+  const verifyApiKey = async (key) => {
+    setApiKeyStatus("checking");
+    const { text, error } = await callClaude(
+      [{ role: "user", content: "Say ok" }],
+      "Reply with ok.", key, "claude-haiku-4-5-20251001", 5
+    );
+    if (text) setApiKeyStatus("ok");
+    else setApiKeyStatus({ error: error || "Unknown error" });
+  };
 
   const addErrorLog = (source, message) => {
     const entry = { source, message, time: new Date().toISOString() };
@@ -541,6 +552,7 @@ export default function App() {
     const logs = await loadShared("uncle-claude-errorlog", []);
     setErrorLogs(logs);
     setLoadingAdmin(false);
+    if (apiKey) verifyApiKey(apiKey);
   };
 
   const downloadAll = () => {
@@ -686,9 +698,15 @@ export default function App() {
             <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: 12, padding: 16, marginBottom: 12 }}>
               <h3 style={{ color: "white", margin: "0 0 10px" }}>🔑 API Key (Claude)</h3>
               <div style={{ display: "flex", gap: 10 }}>
-                <input value={apiKeyInput || apiKey} onChange={e => setApiKeyInput(e.target.value)} placeholder="sk-ant-api03-..." type="password"
+                <input value={apiKeyInput || apiKey} onChange={e => { setApiKeyInput(e.target.value); if (apiKeyStatus) setApiKeyStatus(null); }} placeholder="sk-ant-api03-..." type="password"
                   style={{ flex: 1, padding: "10px 16px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.08)", color: "white", fontSize: 14, fontFamily: "monospace" }} />
-                <Btn onClick={async () => { if (apiKeyInput.trim()) { await saveShared("uncle-claude-apikey", apiKeyInput.trim()); setApiKey(apiKeyInput.trim()); setSetupDone(true); setApiKeyInput(""); } }} size="sm">{setupDone ? "✅ שמור" : "💾 שמור"}</Btn>
+                <Btn onClick={async () => { if (apiKeyInput.trim()) { const key = apiKeyInput.trim(); await saveShared("uncle-claude-apikey", key); setApiKey(key); setSetupDone(true); setApiKeyInput(""); verifyApiKey(key); } }} size="sm">{setupDone ? "✅ שמור" : "💾 שמור"}</Btn>
+                {apiKeyStatus === "checking" && <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 14 }}>⏳</span>}
+                {apiKeyStatus === "ok" && <span style={{ color: "#43e97b", fontSize: 18 }}>✓</span>}
+                {apiKeyStatus && apiKeyStatus.error && (
+                  <span onClick={() => alert(apiKeyStatus.error)}
+                    style={{ color: "#f5576c", fontSize: 18, cursor: "pointer" }} title="לחץ לפרטים">✗</span>
+                )}
               </div>
             </div>
 
