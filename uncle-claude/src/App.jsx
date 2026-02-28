@@ -96,7 +96,7 @@ const getQuestions = (age, g) => {
 const TYPING_DELAY = 1200;
 const SHORT_DELAY = 800;
 
-async function callClaude(messages, sys, apiKey) {
+async function callClaude(messages, sys, apiKey, onError) {
   if (!apiKey) return null;
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -112,11 +112,12 @@ async function callClaude(messages, sys, apiKey) {
     if (!r.ok) {
       const body = await r.text();
       console.warn(`[callClaude] API error ${r.status}: ${body}`);
+      onError?.("API " + r.status + ": " + body.slice(0, 200));
       return null;
     }
     const d = await r.json();
     return d.content?.[0]?.text || null;
-  } catch (e) { console.error("[callClaude] fetch failed:", e); return null; }
+  } catch (e) { console.error("[callClaude] fetch failed:", e); onError?.(e.message); return null; }
 }
 
 function StarBg() {
@@ -223,6 +224,7 @@ export default function App() {
   const [exitPass, setExitPass] = useState("");
   const [continueFiredAt, setContinueFiredAt] = useState(new Set());
   const [apiError, setApiError] = useState(false);
+  const [errorLogs, setErrorLogs] = useState([]);
 
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -245,6 +247,17 @@ export default function App() {
     })();
   }, []);
 
+  const addErrorLog = async (source, message) => {
+    try {
+      const entry = { source, message, time: new Date().toISOString() };
+      const prev = await loadShared("uncle-claude-errorlog", []);
+      const updated = [entry, ...prev].slice(0, 5);
+      await saveShared("uncle-claude-errorlog", updated);
+    } catch (e) {
+      console.error("addErrorLog failed:", e);
+    }
+  };
+
   const getSys = () =>
     `אתה "הדוד קלוד" - דמות מצחיקה, חמה, קצת משוגעת ומקסימה. מנחה שאלון היכרות למשפחת פלג (גרין, לוין, פרוים). עברית, אימוג'ים, מצחיק וחביב. לא מביך ולא גס - חם, מעודד ונלהב. קצר 1-2 משפטים. ${gender === "male" ? "המשתתף זכר - פנה אליו בלשון זכר." : "המשתתפת נקבה - פני אליה בלשון נקבה."}`;
 
@@ -260,7 +273,7 @@ export default function App() {
   const genReaction = async (question, answer) => {
     const r = await callClaude(
       [{ role: "user", content: `${name} ענה: "${answer}" על: "${question}"\nתגובה מצחיקה חמה 1-2 משפטים.` }],
-      getSys(), apiKey
+      getSys(), apiKey, (msg) => addErrorLog("genReaction", msg)
     );
     if (r) { setApiError(false); return r; }
     setApiError(true);
@@ -270,7 +283,7 @@ export default function App() {
   const genFollowup = async (question, answer) => {
     const r = await callClaude(
       [{ role: "user", content: `${name} ענה: "${answer}" על: "${question}"\nשאל שאלת המשך ספציפית לתשובה. רק השאלה.` }],
-      getSys(), apiKey
+      getSys(), apiKey, (msg) => addErrorLog("genFollowup", msg)
     );
     return r;
   };
@@ -279,22 +292,26 @@ export default function App() {
     if (answer.length < 2 || /^(.)\1{3,}$/.test(answer)) return true;
     const r = await callClaude(
       [{ role: "user", content: `האם זה ג'יבריש? ענה רק gibberish או ok.\nתשובה: "${answer}"` }],
-      "ענה רק gibberish או ok.", apiKey
+      "ענה רק gibberish או ok.", apiKey, (msg) => addErrorLog("checkGibberish", msg)
     );
     return r?.toLowerCase()?.includes("gibberish") || false;
   };
 
   const saveProgress = async (ans, qIdx, mqA, completed = false) => {
-    const data = {
-      name, age, gender, answers: ans,
-      questionsAnswered: Object.keys(ans).length,
-      mainQuestionsAnswered: mqA,
-      currentQIdx: qIdx,
-      totalQuestions: allQuestions.length,
-      completed,
-      timestamp: new Date().toISOString()
-    };
-    await saveShared(`player-data:${name}`, data);
+    try {
+      const data = {
+        name, age, gender, answers: ans,
+        questionsAnswered: Object.keys(ans).length,
+        mainQuestionsAnswered: mqA,
+        currentQIdx: qIdx,
+        totalQuestions: allQuestions.length,
+        completed,
+        timestamp: new Date().toISOString()
+      };
+      await saveShared(`player-data:${name}`, data);
+    } catch (e) {
+      await addErrorLog("saveProgress", e.message);
+    }
   };
 
   const getContinuePrompt = (mqCount) => {
@@ -449,6 +466,7 @@ export default function App() {
       await proceedToQuestion(currentQIdx + 1, nextMQ);
     } catch (e) {
       console.error("handleSend error:", e);
+      await addErrorLog("handleSend", e.message);
       try { await addBot("אוי, משהו השתבש... בוא ננסה שוב! 😅", SHORT_DELAY); } catch (_) {}
     } finally {
       processingRef.current = false;
@@ -496,6 +514,8 @@ export default function App() {
     for (const k of keys) { const d = await loadShared(k, null); if (d) all.push({ ...d, storageKey: k }); }
     all.sort((a, b) => (b.questionsAnswered || 0) - (a.questionsAnswered || 0));
     setPlayerData(all);
+    const logs = await loadShared("uncle-claude-errorlog", []);
+    setErrorLogs(logs);
     setLoadingAdmin(false);
   };
 
@@ -707,6 +727,27 @@ export default function App() {
                 </Btn>
               </div>
             )}
+
+            <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: 12, padding: 16, marginTop: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <h3 style={{ color: "white", margin: 0 }}>📋 לוג שגיאות (אחרונות 5)</h3>
+                {errorLogs.length > 0 && (
+                  <Btn onClick={async () => { await saveShared("uncle-claude-errorlog", []); setErrorLogs([]); }} size="sm" style={{ background: "#e74c3c", padding: "4px 12px", fontSize: 12 }}>נקה לוג</Btn>
+                )}
+              </div>
+              {errorLogs.length === 0
+                ? <div style={{ color: "rgba(255,255,255,0.4)", textAlign: "center", padding: 12 }}>אין שגיאות</div>
+                : errorLogs.map((log, i) => (
+                  <div key={i} style={{ borderTop: i > 0 ? "1px solid rgba(255,255,255,0.06)" : "none", padding: "8px 0", direction: "ltr", textAlign: "left" }}>
+                    <div style={{ display: "flex", gap: 8, fontSize: 12, color: "rgba(255,255,255,0.5)", marginBottom: 4 }}>
+                      <span>{new Date(log.time).toLocaleString("he-IL")}</span>
+                      <span style={{ color: "#f5576c", fontWeight: "bold" }}>[{log.source}]</span>
+                    </div>
+                    <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 13, wordBreak: "break-all" }}>{log.message}</div>
+                  </div>
+                ))
+              }
+            </div>
           </div>
         )}
       </div>
