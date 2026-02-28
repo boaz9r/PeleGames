@@ -1,6 +1,7 @@
 {
   "name": "pelegames",
   "version": "1.0.0",
+  "homepage": "https://boaz9r.github.io/PeleGames",
   "private": true,
   "dependencies": {
     "mammoth": "^1.11.0",
@@ -14,7 +15,7 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "predeploy": "PUBLIC_URL=https://boaz9r.github.io/PeleGames npm run build",
+    "predeploy": "npm run build",
     "deploy": "gh-pages -d build"
   },
   "browserslist": {
