@@ -96,19 +96,23 @@ const getQuestions = (age, g) => {
 const TYPING_DELAY = 1200;
 const SHORT_DELAY = 800;
 
-async function callClaude(messages, sys, apiKey) {
+async function callClaude(messages, sys, apiKey, model = "claude-sonnet-4-5-20250929", maxTokens = 300) {
   if (!apiKey) return { text: null, error: "No API key" };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
+      signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
         "x-api-key": apiKey,
         "anthropic-version": "2023-06-01",
         "anthropic-dangerous-direct-browser-access": "true"
       },
-      body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 300, system: sys, messages }),
+      body: JSON.stringify({ model, max_tokens: maxTokens, system: sys, messages }),
     });
+    clearTimeout(timeout);
     if (!r.ok) {
       const body = await r.text();
       console.warn(`[callClaude] API error ${r.status}: ${body}`);
@@ -117,7 +121,12 @@ async function callClaude(messages, sys, apiKey) {
     const d = await r.json();
     const text = d.content?.[0]?.text || null;
     return { text, error: text ? null : "Empty response" };
-  } catch (e) { console.error("[callClaude] fetch failed:", e); return { text: null, error: e.message }; }
+  } catch (e) {
+    clearTimeout(timeout);
+    const msg = e.name === "AbortError" ? "Request timeout (15s)" : e.message;
+    console.error("[callClaude] failed:", msg);
+    return { text: null, error: msg };
+  }
 }
 
 function StarBg() {
@@ -239,6 +248,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const k = await loadShared("uncle-claude-apikey", "");
+      console.log("[uncle-claude] API key loaded:", k ? "yes" : "NO");
       if (k) { setApiKey(k); setSetupDone(true); }
       const img = await loadShared("uncle-claude-avatar", null);
       if (img) setUncleImg(img);
@@ -247,15 +257,17 @@ export default function App() {
     })();
   }, []);
 
-  const addErrorLog = async (source, message) => {
-    try {
-      const entry = { source, message, time: new Date().toISOString() };
-      const prev = await loadShared("uncle-claude-errorlog", []);
-      const updated = [entry, ...prev].slice(0, 5);
-      await saveShared("uncle-claude-errorlog", updated);
-    } catch (e) {
-      console.error("addErrorLog failed:", e);
-    }
+  const addErrorLog = (source, message) => {
+    const entry = { source, message, time: new Date().toISOString() };
+    setErrorLogs(prev => [entry, ...prev].slice(0, 5));
+    (async () => {
+      try {
+        const prev = await loadShared("uncle-claude-errorlog", []);
+        await saveShared("uncle-claude-errorlog", [entry, ...prev].slice(0, 5));
+      } catch (e) {
+        console.error("addErrorLog failed:", e);
+      }
+    })();
   };
 
   const getSys = () =>
@@ -273,20 +285,20 @@ export default function App() {
   const genReaction = async (question, answer) => {
     const { text, error } = await callClaude(
       [{ role: "user", content: `${name} ענה: "${answer}" על: "${question}"\nתגובה מצחיקה חמה 1-2 משפטים.` }],
-      getSys(), apiKey
+      getSys(), apiKey, "claude-sonnet-4-5-20250929", 150
     );
     if (text) { setApiError(false); return text; }
     setApiError(true);
-    if (error) await addErrorLog("genReaction", error);
+    if (error) addErrorLog("genReaction", error);
     return gender === "male" ? "מעניין מאוד! 😄" : "מעניינת מאוד! 😄";
   };
 
   const genFollowup = async (question, answer) => {
     const { text, error } = await callClaude(
       [{ role: "user", content: `${name} ענה: "${answer}" על: "${question}"\nשאל שאלת המשך ספציפית לתשובה. רק השאלה.` }],
-      getSys(), apiKey
+      getSys(), apiKey, "claude-sonnet-4-5-20250929", 100
     );
-    if (!text && error) await addErrorLog("genFollowup", error);
+    if (!text && error) addErrorLog("genFollowup", error);
     return text;
   };
 
@@ -294,9 +306,9 @@ export default function App() {
     if (answer.length < 2 || /^(.)\1{3,}$/.test(answer)) return true;
     const { text, error } = await callClaude(
       [{ role: "user", content: `האם זה ג'יבריש? ענה רק gibberish או ok.\nתשובה: "${answer}"` }],
-      "ענה רק gibberish או ok.", apiKey
+      "ענה רק gibberish או ok.", apiKey, "claude-haiku-4-5-20251001", 10
     );
-    if (!text && error) await addErrorLog("checkGibberish", error);
+    if (!text && error) addErrorLog("checkGibberish", error);
     return text?.toLowerCase()?.includes("gibberish") || false;
   };
 
@@ -313,7 +325,7 @@ export default function App() {
       };
       await saveShared(`player-data:${name}`, data);
     } catch (e) {
-      await addErrorLog("saveProgress", e.message);
+      addErrorLog("saveProgress", e.message);
     }
   };
 
@@ -432,7 +444,7 @@ export default function App() {
         return;
       }
 
-      if (apiKey) {
+      if (apiKey && !apiError) {
         const isGib = await checkGibberish(text);
         if (isGib && gibberishRetry === 0) {
           setGibberishRetry(1);
@@ -456,17 +468,20 @@ export default function App() {
 
       const newAns = { ...answers, [q.key]: text };
       setAnswers(newAns);
-      const reaction = await genReaction(q.q, text);
+
+      // Run reaction + followup in parallel
+      const [reaction, fu] = await Promise.all([
+        genReaction(q.q, text),
+        (q.followup && apiKey && !apiError) ? genFollowup(q.q, text) : Promise.resolve(null)
+      ]);
+
       await addBot(reaction, SHORT_DELAY);
 
-      if (q.followup && apiKey) {
-        const fu = await genFollowup(q.q, text);
-        if (fu) {
-          await saveProgress(newAns, currentQIdx, mainQAnswered);
-          await addBot(fu, TYPING_DELAY);
-          setAwaitingFollowup(true);
-          return;
-        }
+      if (fu) {
+        await saveProgress(newAns, currentQIdx, mainQAnswered);
+        await addBot(fu, TYPING_DELAY);
+        setAwaitingFollowup(true);
+        return;
       }
 
       const nextMQ = mainQAnswered + 1;
@@ -475,7 +490,7 @@ export default function App() {
       await proceedToQuestion(currentQIdx + 1, nextMQ);
     } catch (e) {
       console.error("handleSend error:", e);
-      await addErrorLog("handleSend", e.message);
+      addErrorLog("handleSend", e.message);
       try { await addBot("אוי, משהו השתבש... בוא ננסה שוב! 😅", SHORT_DELAY); } catch (_) {}
     } finally {
       processingRef.current = false;
