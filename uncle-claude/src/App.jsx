@@ -96,8 +96,8 @@ const getQuestions = (age, g) => {
 const TYPING_DELAY = 1200;
 const SHORT_DELAY = 800;
 
-async function callClaude(messages, sys, apiKey, onError) {
-  if (!apiKey) return null;
+async function callClaude(messages, sys, apiKey) {
+  if (!apiKey) return { text: null, error: "No API key" };
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -112,12 +112,12 @@ async function callClaude(messages, sys, apiKey, onError) {
     if (!r.ok) {
       const body = await r.text();
       console.warn(`[callClaude] API error ${r.status}: ${body}`);
-      onError?.("API " + r.status + ": " + body.slice(0, 200));
-      return null;
+      return { text: null, error: "API " + r.status + ": " + body.slice(0, 200) };
     }
     const d = await r.json();
-    return d.content?.[0]?.text || null;
-  } catch (e) { console.error("[callClaude] fetch failed:", e); onError?.(e.message); return null; }
+    const text = d.content?.[0]?.text || null;
+    return { text, error: text ? null : "Empty response" };
+  } catch (e) { console.error("[callClaude] fetch failed:", e); return { text: null, error: e.message }; }
 }
 
 function StarBg() {
@@ -271,30 +271,33 @@ export default function App() {
   });
 
   const genReaction = async (question, answer) => {
-    const r = await callClaude(
+    const { text, error } = await callClaude(
       [{ role: "user", content: `${name} ענה: "${answer}" על: "${question}"\nתגובה מצחיקה חמה 1-2 משפטים.` }],
-      getSys(), apiKey, (msg) => addErrorLog("genReaction", msg)
+      getSys(), apiKey
     );
-    if (r) { setApiError(false); return r; }
+    if (text) { setApiError(false); return text; }
     setApiError(true);
+    if (error) await addErrorLog("genReaction", error);
     return gender === "male" ? "מעניין מאוד! 😄" : "מעניינת מאוד! 😄";
   };
 
   const genFollowup = async (question, answer) => {
-    const r = await callClaude(
+    const { text, error } = await callClaude(
       [{ role: "user", content: `${name} ענה: "${answer}" על: "${question}"\nשאל שאלת המשך ספציפית לתשובה. רק השאלה.` }],
-      getSys(), apiKey, (msg) => addErrorLog("genFollowup", msg)
+      getSys(), apiKey
     );
-    return r;
+    if (!text && error) await addErrorLog("genFollowup", error);
+    return text;
   };
 
   const checkGibberish = async (answer) => {
     if (answer.length < 2 || /^(.)\1{3,}$/.test(answer)) return true;
-    const r = await callClaude(
+    const { text, error } = await callClaude(
       [{ role: "user", content: `האם זה ג'יבריש? ענה רק gibberish או ok.\nתשובה: "${answer}"` }],
-      "ענה רק gibberish או ok.", apiKey, (msg) => addErrorLog("checkGibberish", msg)
+      "ענה רק gibberish או ok.", apiKey
     );
-    return r?.toLowerCase()?.includes("gibberish") || false;
+    if (!text && error) await addErrorLog("checkGibberish", error);
+    return text?.toLowerCase()?.includes("gibberish") || false;
   };
 
   const saveProgress = async (ans, qIdx, mqA, completed = false) => {
@@ -357,6 +360,12 @@ export default function App() {
     const qs = getQuestions(parseInt(age), gender);
     setAllQuestions(qs);
     setScreen("chat");
+    setDone(false);
+    setChatMessages([]);
+    setShowContinue(null);
+    setAwaitingFollowup(false);
+    setGibberishRetry(0);
+    setCurrentQIdx(0);
     setApiError(false);
     processingRef.current = false;
 
@@ -384,6 +393,7 @@ export default function App() {
   };
 
   const proceedToQuestion = async (qIdx, mqCount, qsOverride = null) => {
+    processingRef.current = false;
     const qs = qsOverride || allQuestions;
     if (!qs.length || qIdx >= qs.length) { await finishChat(); return; }
     const cp = getContinuePrompt(mqCount);
@@ -396,7 +406,6 @@ export default function App() {
     setCurrentQIdx(qIdx);
     setGibberishRetry(0);
     setAwaitingFollowup(false);
-    processingRef.current = false;
   };
 
   const handleSend = async () => {
