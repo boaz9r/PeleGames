@@ -1,12 +1,12 @@
 {
   "files": {
-    "main.js": "/pelegames/static/js/main.71413fd9.js",
-    "static/js/633.e20005db.chunk.js": "/pelegames/static/js/633.e20005db.chunk.js",
-    "index.html": "/pelegames/index.html",
-    "main.71413fd9.js.map": "/pelegames/static/js/main.71413fd9.js.map",
-    "633.e20005db.chunk.js.map": "/pelegames/static/js/633.e20005db.chunk.js.map"
+    "main.js": "/PeleGames/static/js/main.e64b1cd0.js",
+    "static/js/633.f1323574.chunk.js": "/PeleGames/static/js/633.f1323574.chunk.js",
+    "index.html": "/PeleGames/index.html",
+    "main.e64b1cd0.js.map": "/PeleGames/static/js/main.e64b1cd0.js.map",
+    "633.f1323574.chunk.js.map": "/PeleGames/static/js/633.f1323574.chunk.js.map"
   },
   "entrypoints": [
-    "static/js/main.71413fd9.js"
+    "static/js/main.e64b1cd0.js"
   ]
 }
