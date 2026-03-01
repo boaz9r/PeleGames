@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { saveShared, loadShared, deleteShared, listShared } from "./firebase.js";
 
 const ADMIN_PASS = "peleg2024";
+const APP_VERSION = "1.0.0";
 
 const getQuestions = (age, g) => {
   const m = g === "male";
@@ -473,14 +474,11 @@ export default function App() {
       }
 
       // Run gibberish check in parallel with reaction + followup
-      const t0 = performance.now();
       const [isGib, reaction, fu] = await Promise.all([
         (apiKey && !apiError) ? checkGibberish(text, q.q || "") : Promise.resolve(false),
         genReaction(q.q, text),
         (q.followup && apiKey && !apiError) ? genFollowup(q.q, text) : Promise.resolve(null)
       ]);
-
-      console.log(`[parallel] gibberish=${isGib}, reaction=${reaction?.length}ch, followup=${fu ? 'yes' : 'no'}, took ${(performance.now() - t0).toFixed(0)}ms`);
 
       // Handle gibberish result — discard reaction/followup if gibberish on first try
       if (isGib && apiKey && !apiError) {
@@ -703,7 +701,7 @@ export default function App() {
         ) : (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-              <h1 style={{ color: "white", margin: 0 }}>⚙️ אדמין</h1>
+              <h1 style={{ color: "white", margin: 0 }}>⚙️ אדמין <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", fontWeight: "normal" }}>v{APP_VERSION}</span></h1>
               <Btn onClick={() => { setScreen("splash"); setAdminLoggedIn(false); setAdminPass(""); }} size="sm" style={{ background: "rgba(255,255,255,0.2)" }}>חזרה</Btn>
             </div>
 
