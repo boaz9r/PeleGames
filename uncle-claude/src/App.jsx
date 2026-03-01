@@ -473,11 +473,14 @@ export default function App() {
       }
 
       // Run gibberish check in parallel with reaction + followup
+      const t0 = performance.now();
       const [isGib, reaction, fu] = await Promise.all([
         (apiKey && !apiError) ? checkGibberish(text, q.q || "") : Promise.resolve(false),
         genReaction(q.q, text),
         (q.followup && apiKey && !apiError) ? genFollowup(q.q, text) : Promise.resolve(null)
       ]);
+
+      console.log(`[parallel] gibberish=${isGib}, reaction=${reaction?.length}ch, followup=${fu ? 'yes' : 'no'}, took ${(performance.now() - t0).toFixed(0)}ms`);
 
       // Handle gibberish result — discard reaction/followup if gibberish on first try
       if (isGib && apiKey && !apiError) {
