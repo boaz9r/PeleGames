@@ -300,10 +300,18 @@ export default function App() {
     }, delay);
   });
 
+  const buildContext = () => {
+    const entries = Object.entries(answers);
+    if (entries.length === 0) return "";
+    const lines = entries.map(([k, v]) => `${k}: ${v}`).join("\n");
+    return `\n\nתשובות קודמות של ${name}:\n${lines}`;
+  };
+
   const genReaction = async (question, answer) => {
+    const ctx = buildContext();
     const { text, error } = await callClaude(
-      [{ role: "user", content: `${name} ענה: "${answer}" על: "${question}"\nתגובה מצחיקה חמה 1-2 משפטים.` }],
-      getSys(), apiKey, "claude-sonnet-4-5-20250929", 150
+      [{ role: "user", content: `${name} ענה: "${answer}" על: "${question}"\nתגובה מצחיקה חמה 1-2 משפטים.${ctx ? " אם רלוונטי, שלב התייחסות לתשובות קודמות." : ""}` }],
+      getSys() + ctx, apiKey, "claude-sonnet-4-5-20250929", 150
     );
     if (text) { setApiError(false); return text; }
     setApiError(true);
@@ -312,19 +320,21 @@ export default function App() {
   };
 
   const genFollowup = async (question, answer) => {
+    const ctx = buildContext();
     const { text, error } = await callClaude(
-      [{ role: "user", content: `${name} ענה: "${answer}" על: "${question}"\nשאל שאלת המשך ספציפית לתשובה. רק השאלה.` }],
-      getSys(), apiKey, "claude-sonnet-4-5-20250929", 100
+      [{ role: "user", content: `${name} ענה: "${answer}" על: "${question}"\nשאל שאלת המשך ספציפית לתשובה. רק השאלה.${ctx ? " אפשר להתייחס לתשובות קודמות אם רלוונטי." : ""}` }],
+      getSys() + ctx, apiKey, "claude-sonnet-4-5-20250929", 100
     );
     if (!text && error) addErrorLog("genFollowup", error);
     return text;
   };
 
-  const checkGibberish = async (answer) => {
+  const checkGibberish = async (answer, question) => {
     if (answer.length < 2 || /^(.)\1{3,}$/.test(answer)) return true;
     const { text, error } = await callClaude(
-      [{ role: "user", content: `האם זה ג'יבריש? ענה רק gibberish או ok.\nתשובה: "${answer}"` }],
-      "ענה רק gibberish או ok.", apiKey, "claude-haiku-4-5-20251001", 10
+      [{ role: "user", content: `Question asked: "${question}"\nAnswer given: "${answer}"\n\nIs this answer gibberish/random keyboard mashing, or a real attempt to answer? The answer may be in Hebrew. Reply ONLY "gibberish" or "ok". When in doubt, say "ok".` }],
+      "You classify if answers are gibberish. Reply ONLY gibberish or ok. When in doubt, say ok.",
+      apiKey, "claude-haiku-4-5-20251001", 10
     );
     if (!text && error) addErrorLog("checkGibberish", error);
     return text?.toLowerCase()?.includes("gibberish") || false;
@@ -463,7 +473,7 @@ export default function App() {
       }
 
       if (apiKey && !apiError) {
-        const isGib = await checkGibberish(text);
+        const isGib = await checkGibberish(text, allQuestions[currentQIdx]?.q || "");
         if (isGib && gibberishRetry === 0) {
           setGibberishRetry(1);
           await addBot(gender === "male"
@@ -473,14 +483,7 @@ export default function App() {
         }
         if (isGib && gibberishRetry >= 1) {
           setGibberishRetry(0);
-          await addBot(`אוקיי, אני מבין שלא בא לך לענות על זה... 😅\nלא נורא, נמשיך הלאה! 🚀`, SHORT_DELAY);
-          const newAns = { ...answers, [q.key]: "(לא ענה)" };
-          setAnswers(newAns);
-          const nextMQ = mainQAnswered + 1;
-          setMainQAnswered(nextMQ);
-          await saveProgress(newAns, currentQIdx + 1, nextMQ);
-          await proceedToQuestion(currentQIdx + 1, nextMQ);
-          return;
+          // Accept the answer as-is — player insists, respect it
         }
       }
 
