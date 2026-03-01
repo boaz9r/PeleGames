@@ -260,12 +260,19 @@ export default function App() {
 
   const verifyApiKey = async (key) => {
     setApiKeyStatus("checking");
-    const { text, error } = await callClaude(
-      [{ role: "user", content: "Say ok" }],
-      "Reply with ok.", key, "claude-haiku-4-5-20251001", 5
-    );
-    if (text) setApiKeyStatus("ok");
-    else setApiKeyStatus({ error: error || "Unknown error" });
+    const msg = [{ role: "user", content: "Say ok" }];
+    const sys = "Reply with ok.";
+    const [haiku, sonnet] = await Promise.all([
+      callClaude(msg, sys, key, "claude-haiku-4-5-20251001", 5),
+      callClaude(msg, sys, key, "claude-sonnet-4-5-20250929", 5),
+    ]);
+    if (haiku.text && sonnet.text) setApiKeyStatus("ok");
+    else {
+      const parts = [];
+      if (!haiku.text) parts.push("Haiku: " + (haiku.error || "failed"));
+      if (!sonnet.text) parts.push("Sonnet: " + (sonnet.error || "failed"));
+      setApiKeyStatus({ error: parts.join("\n") });
+    }
   };
 
   const addErrorLog = (source, message) => {
