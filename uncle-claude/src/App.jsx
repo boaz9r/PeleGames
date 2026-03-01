@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { saveShared, loadShared, deleteShared, listShared } from "./firebase.js";
 
 const ADMIN_PASS = "peleg2024";
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "1.3.0";
 
 const getQuestions = (age, g) => {
   const m = g === "male";
@@ -467,11 +467,16 @@ export default function App() {
         const nextMQ = mainQAnswered + 1;
         setMainQAnswered(nextMQ);
         await saveProgress(newAns, currentQIdx + 1, nextMQ);
+        setTyping(true);
         const reaction = await genReaction("שאלת המשך", text);
-        await addBot(reaction, SHORT_DELAY);
+        setTyping(false);
+        setChatMessages(prev => [...prev, { text: reaction, isUser: false }]);
         await proceedToQuestion(currentQIdx + 1, nextMQ);
         return;
       }
+
+      // Show typing indicator immediately
+      setTyping(true);
 
       // Run gibberish check in parallel with reaction + followup
       const [isGib, reaction, fu] = await Promise.all([
@@ -484,9 +489,10 @@ export default function App() {
       if (isGib && apiKey && !apiError) {
         if (gibberishRetry === 0) {
           setGibberishRetry(1);
-          await addBot(gender === "male"
+          setTyping(false);
+          setChatMessages(prev => [...prev, { text: gender === "male"
             ? `אממ... ${name}, מה? 🤔\nנראה לי שהאצבעות שלך רקדו על המקלדת!\nבוא ננסה שוב, הפעם ברצינות (קצת) 😄`
-            : `אממ... ${name}, מה? 🤔\nנראה לי שהאצבעות שלך רקדו על המקלדת!\nבואי ננסה שוב, הפעם ברצינות (קצת) 😄`, SHORT_DELAY);
+            : `אממ... ${name}, מה? 🤔\nנראה לי שהאצבעות שלך רקדו על המקלדת!\nבואי ננסה שוב, הפעם ברצינות (קצת) 😄`, isUser: false }]);
           return;
         }
         // gibberishRetry >= 1: accept the answer, reset retry counter
@@ -496,7 +502,9 @@ export default function App() {
       const newAns = { ...answers, [q.key]: text };
       setAnswers(newAns);
 
-      await addBot(reaction, SHORT_DELAY);
+      // Show reaction immediately (typing indicator was already showing during API calls)
+      setTyping(false);
+      setChatMessages(prev => [...prev, { text: reaction, isUser: false }]);
 
       if (fu) {
         await saveProgress(newAns, currentQIdx, mainQAnswered);
@@ -512,7 +520,8 @@ export default function App() {
     } catch (e) {
       console.error("handleSend error:", e);
       addErrorLog("handleSend", e.message);
-      try { await addBot("אוי, משהו השתבש... בוא ננסה שוב! 😅", SHORT_DELAY); } catch (_) {}
+      setTyping(false);
+      setChatMessages(prev => [...prev, { text: "אוי, משהו השתבש... בוא ננסה שוב! 😅", isUser: false }]);
     } finally {
       processingRef.current = false;
     }
