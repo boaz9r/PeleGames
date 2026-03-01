@@ -260,22 +260,18 @@ export default function App() {
 
   const verifyApiKey = async (key) => {
     setApiKeyStatus("checking");
-    try {
-      const msg = [{ role: "user", content: "Say ok" }];
-      const sys = "Reply with ok.";
-      const [haiku, sonnet] = await Promise.all([
-        callClaude(msg, sys, key, "claude-haiku-4-5-20251001", 5, 8000),
-        callClaude(msg, sys, key, "claude-sonnet-4-5-20250929", 5, 8000),
-      ]);
-      if (haiku.text && sonnet.text) setApiKeyStatus("ok");
-      else {
-        const parts = [];
-        if (!haiku.text) parts.push("Haiku: " + (haiku.error || "failed"));
-        if (!sonnet.text) parts.push("Sonnet: " + (sonnet.error || "failed"));
-        setApiKeyStatus({ error: parts.join("\n") });
-      }
-    } catch (e) {
-      setApiKeyStatus({ error: "Exception: " + e.message });
+    const msg = [{ role: "user", content: "Say ok" }];
+    const sys = "Reply with ok.";
+    const [haiku, sonnet] = await Promise.all([
+      callClaude(msg, sys, key, "claude-haiku-4-5-20251001", 5, 8000),
+      callClaude(msg, sys, key, "claude-sonnet-4-5-20250929", 5, 8000),
+    ]);
+    if (haiku.text && sonnet.text) setApiKeyStatus("ok");
+    else {
+      const parts = [];
+      if (!haiku.text) parts.push("Haiku: " + (haiku.error || "failed"));
+      if (!sonnet.text) parts.push("Sonnet: " + (sonnet.error || "failed"));
+      setApiKeyStatus({ error: parts.join("\n") });
     }
   };
 
@@ -708,47 +704,17 @@ export default function App() {
 
             <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: 12, padding: 16, marginBottom: 12 }}>
               <h3 style={{ color: "white", margin: "0 0 10px" }}>🔑 API Key (Claude)</h3>
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 10 }}>
                 <input value={apiKeyInput || apiKey} onChange={e => { setApiKeyInput(e.target.value); if (apiKeyStatus) setApiKeyStatus(null); }} placeholder="sk-ant-api03-..." type="password"
                   style={{ flex: 1, padding: "10px 16px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.08)", color: "white", fontSize: 14, fontFamily: "monospace" }} />
-                <Btn onClick={async () => {
-                  const key = (apiKeyInput || apiKey).trim();
-                  if (!key) return;
-                  setApiKeyStatus("saving");
-                  try {
-                    await saveShared("uncle-claude-apikey", key);
-                    setApiKey(key);
-                    setSetupDone(true);
-                    setApiKeyInput("");
-                    setApiKeyStatus("checking");
-                    const msg = [{ role: "user", content: "Say ok" }];
-                    const sys = "Reply with ok.";
-                    const [haiku, sonnet] = await Promise.all([
-                      callClaude(msg, sys, key, "claude-haiku-4-5-20251001", 5, 8000),
-                      callClaude(msg, sys, key, "claude-sonnet-4-5-20250929", 5, 8000),
-                    ]);
-                    if (haiku.text && sonnet.text) setApiKeyStatus("ok");
-                    else {
-                      const parts = [];
-                      if (!haiku.text) parts.push("Haiku: " + (haiku.error || "failed"));
-                      if (!sonnet.text) parts.push("Sonnet: " + (sonnet.error || "failed"));
-                      setApiKeyStatus({ error: parts.join("\n") });
-                    }
-                  } catch (e) {
-                    setApiKeyStatus({ error: "Exception: " + e.message });
-                  }
-                }} size="sm">{setupDone ? "✅ שמור" : "💾 שמור"}</Btn>
-                {apiKeyStatus === "saving" && <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 14 }}>💾...</span>}
-                {apiKeyStatus === "checking" && <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 14 }}>⏳ בודק...</span>}
+                <Btn onClick={async () => { const key = (apiKeyInput || apiKey).trim(); if (key) { await saveShared("uncle-claude-apikey", key); setApiKey(key); setSetupDone(true); setApiKeyInput(""); verifyApiKey(key); } }} size="sm">{setupDone ? "✅ שמור" : "💾 שמור"}</Btn>
+                {apiKeyStatus === "checking" && <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 14 }}>⏳</span>}
                 {apiKeyStatus === "ok" && <span style={{ color: "#43e97b", fontSize: 18 }}>✓</span>}
                 {apiKeyStatus && apiKeyStatus.error && (
                   <span onClick={() => alert(apiKeyStatus.error)}
-                    style={{ color: "#f5576c", fontSize: 18, cursor: "pointer" }} title="לחץ לפרטים">✗ שגיאה</span>
+                    style={{ color: "#f5576c", fontSize: 18, cursor: "pointer" }} title="לחץ לפרטים">✗</span>
                 )}
               </div>
-              {apiKeyStatus && <div style={{ marginTop: 6, fontSize: 12, color: "rgba(255,255,255,0.4)", direction: "ltr" }}>
-                Status: {typeof apiKeyStatus === "string" ? apiKeyStatus : JSON.stringify(apiKeyStatus)}
-              </div>}
             </div>
 
             <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
