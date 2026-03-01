@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { saveShared, loadShared, deleteShared, listShared } from "./firebase.js";
 
 const ADMIN_PASS = "peleg2024";
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.2.0";
 
 const getQuestions = (age, g) => {
   const m = g === "male";
