@@ -472,29 +472,28 @@ export default function App() {
         return;
       }
 
-      if (apiKey && !apiError) {
-        const isGib = await checkGibberish(text, allQuestions[currentQIdx]?.q || "");
-        if (isGib && gibberishRetry === 0) {
+      // Run gibberish check in parallel with reaction + followup
+      const [isGib, reaction, fu] = await Promise.all([
+        (apiKey && !apiError) ? checkGibberish(text, q.q || "") : Promise.resolve(false),
+        genReaction(q.q, text),
+        (q.followup && apiKey && !apiError) ? genFollowup(q.q, text) : Promise.resolve(null)
+      ]);
+
+      // Handle gibberish result — discard reaction/followup if gibberish on first try
+      if (isGib && apiKey && !apiError) {
+        if (gibberishRetry === 0) {
           setGibberishRetry(1);
           await addBot(gender === "male"
             ? `אממ... ${name}, מה? 🤔\nנראה לי שהאצבעות שלך רקדו על המקלדת!\nבוא ננסה שוב, הפעם ברצינות (קצת) 😄`
             : `אממ... ${name}, מה? 🤔\nנראה לי שהאצבעות שלך רקדו על המקלדת!\nבואי ננסה שוב, הפעם ברצינות (קצת) 😄`, SHORT_DELAY);
           return;
         }
-        if (isGib && gibberishRetry >= 1) {
-          setGibberishRetry(0);
-          // Accept the answer as-is — player insists, respect it
-        }
+        // gibberishRetry >= 1: accept the answer, reset retry counter
+        setGibberishRetry(0);
       }
 
       const newAns = { ...answers, [q.key]: text };
       setAnswers(newAns);
-
-      // Run reaction + followup in parallel
-      const [reaction, fu] = await Promise.all([
-        genReaction(q.q, text),
-        (q.followup && apiKey && !apiError) ? genFollowup(q.q, text) : Promise.resolve(null)
-      ]);
 
       await addBot(reaction, SHORT_DELAY);
 
