@@ -96,10 +96,10 @@ const getQuestions = (age, g) => {
 const TYPING_DELAY = 1200;
 const SHORT_DELAY = 800;
 
-async function callClaude(messages, sys, apiKey, model = "claude-sonnet-4-5-20250929", maxTokens = 300) {
+async function callClaude(messages, sys, apiKey, model = "claude-sonnet-4-5-20250929", maxTokens = 300, timeoutMs = 15000) {
   if (!apiKey) return { text: null, error: "No API key" };
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -263,8 +263,8 @@ export default function App() {
     const msg = [{ role: "user", content: "Say ok" }];
     const sys = "Reply with ok.";
     const [haiku, sonnet] = await Promise.all([
-      callClaude(msg, sys, key, "claude-haiku-4-5-20251001", 5),
-      callClaude(msg, sys, key, "claude-sonnet-4-5-20250929", 5),
+      callClaude(msg, sys, key, "claude-haiku-4-5-20251001", 5, 8000),
+      callClaude(msg, sys, key, "claude-sonnet-4-5-20250929", 5, 8000),
     ]);
     if (haiku.text && sonnet.text) setApiKeyStatus("ok");
     else {
@@ -707,7 +707,7 @@ export default function App() {
               <div style={{ display: "flex", gap: 10 }}>
                 <input value={apiKeyInput || apiKey} onChange={e => { setApiKeyInput(e.target.value); if (apiKeyStatus) setApiKeyStatus(null); }} placeholder="sk-ant-api03-..." type="password"
                   style={{ flex: 1, padding: "10px 16px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.08)", color: "white", fontSize: 14, fontFamily: "monospace" }} />
-                <Btn onClick={async () => { if (apiKeyInput.trim()) { const key = apiKeyInput.trim(); await saveShared("uncle-claude-apikey", key); setApiKey(key); setSetupDone(true); setApiKeyInput(""); verifyApiKey(key); } }} size="sm">{setupDone ? "✅ שמור" : "💾 שמור"}</Btn>
+                <Btn onClick={async () => { const key = (apiKeyInput || apiKey).trim(); if (key) { await saveShared("uncle-claude-apikey", key); setApiKey(key); setSetupDone(true); setApiKeyInput(""); verifyApiKey(key); } }} size="sm">{setupDone ? "✅ שמור" : "💾 שמור"}</Btn>
                 {apiKeyStatus === "checking" && <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 14 }}>⏳</span>}
                 {apiKeyStatus === "ok" && <span style={{ color: "#43e97b", fontSize: 18 }}>✓</span>}
                 {apiKeyStatus && apiKeyStatus.error && (
